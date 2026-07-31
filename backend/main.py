@@ -16,6 +16,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# Import dashboard
+from dashboard import router as dashboard_router
 from pydantic import BaseModel, Field
 
 # ═══════════════════════════════════════════════════════════════
@@ -309,6 +312,12 @@ async def delete_conversation(conversation_id: str):
 async def clear_conversation(conversation_id: str):
     memory.clear_conversation(conversation_id)
     return {"status": "cleared", "conversation_id": conversation_id}
+
+# ═══════════════════════════════════════════════════════════════
+# DASHBOARD ROUTER
+# ═══════════════════════════════════════════════════════════════
+
+app.include_router(dashboard_router)
 
 # ═══════════════════════════════════════════════════════════════
 # STATIC FRONTEND (Single HTML with embedded React)
