@@ -2,7 +2,7 @@
 """
 MuradAI v4.1 - Full Stack AI Chat
 Backend: FastAPI + Ollama
-Frontend: React static files served from /static
+Frontend: React + Dashboard embedded in one file
 """
 
 import os
@@ -10,15 +10,10 @@ import json
 import aiohttp
 from typing import Optional, List, Dict, AsyncGenerator
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-
-# Import dashboard
-from dashboard import router as dashboard_router
 from pydantic import BaseModel, Field
 
 # ═══════════════════════════════════════════════════════════════
@@ -96,13 +91,6 @@ class ChatResponse(BaseModel):
     response: str
     conversation_id: str
     model: str
-    timestamp: str
-
-class HealthResponse(BaseModel):
-    status: str
-    version: str
-    llm: str
-    models_available: List[str]
     timestamp: str
 
 # ═══════════════════════════════════════════════════════════════
@@ -215,7 +203,6 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -314,29 +301,265 @@ async def clear_conversation(conversation_id: str):
     return {"status": "cleared", "conversation_id": conversation_id}
 
 # ═══════════════════════════════════════════════════════════════
-# DASHBOARD ROUTER
+# DASHBOARD PAGE
 # ═══════════════════════════════════════════════════════════════
 
-app.include_router(dashboard_router)
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    return HTMLResponse(content=DASHBOARD_HTML)
 
 # ═══════════════════════════════════════════════════════════════
-# STATIC FRONTEND (Single HTML with embedded React)
+# MAIN CHAT PAGE
 # ═══════════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    """Serve the React chat UI"""
-    return HTMLResponse(content=HTML_CONTENT)
+    return HTMLResponse(content=CHAT_HTML)
 
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse("/dev/null")
 
 # ═══════════════════════════════════════════════════════════════
-# EMBEDDED REACT FRONTEND HTML
+# DASHBOARD HTML
 # ═══════════════════════════════════════════════════════════════
 
-HTML_CONTENT = """<!DOCTYPE html>
+DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MuradAI v4.1 - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #222;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #2ecc71;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .section {
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+        .model-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: rgba(46, 204, 113, 0.08);
+            border: 1px solid rgba(46, 204, 113, 0.2);
+        }
+        .model-item.inactive {
+            background: rgba(255, 255, 255, 0.02);
+            border-color: #222;
+        }
+        .model-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .model-icon { font-size: 16px; }
+        .model-name { font-size: 13px; font-weight: 600; }
+        .model-desc { font-size: 11px; color: #666; }
+        .badge {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .badge-active { background: #2ecc71; color: white; }
+        .badge-download { background: #222; color: #666; }
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .action-btn {
+            padding: 12px;
+            border: 1px solid #222;
+            border-radius: 8px;
+            background: transparent;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+        .action-btn:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: #667eea;
+        }
+        .footer {
+            text-align: center;
+            font-size: 11px;
+            color: #444;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">MuradAI v4.1</div>
+            <div class="status">
+                <div class="status-dot"></div>
+                <span style="font-size:13px;color:#888;">Connected</span>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">3</div>
+                <div class="stat-label">Models Available</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="conv-count">0</div>
+                <div class="stat-label">Conversations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">50</div>
+                <div class="stat-label">Max History</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Available Models</div>
+            <div class="model-item">
+                <div class="model-info">
+                    <span class="model-icon">Llama</span>
+                    <div>
+                        <div class="model-name">Llama 3.2</div>
+                        <div class="model-desc">Fast & efficient - 2GB</div>
+                    </div>
+                </div>
+                <span class="badge badge-active">Active</span>
+            </div>
+            <div class="model-item inactive">
+                <div class="model-info">
+                    <span class="model-icon">DeepSeek</span>
+                    <div>
+                        <div class="model-name">DeepSeek R1</div>
+                        <div class="model-desc">Reasoning focused - 7GB</div>
+                    </div>
+                </div>
+                <span class="badge badge-download">Download</span>
+            </div>
+            <div class="model-item inactive">
+                <div class="model-info">
+                    <span class="model-icon">Qwen</span>
+                    <div>
+                        <div class="model-name">Qwen 2.5 Coder</div>
+                        <div class="model-desc">Code generation - 7GB</div>
+                    </div>
+                </div>
+                <span class="badge badge-download">Download</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Quick Actions</div>
+            <div class="actions-grid">
+                <a href="/" class="action-btn">Chat Interface</a>
+                <a href="/api/docs" class="action-btn">API Docs</a>
+                <a href="/api/health" class="action-btn">Health Check</a>
+                <a href="/api/models" class="action-btn">Models List</a>
+            </div>
+        </div>
+
+        <div class="footer">
+            MuradAI v4.1 - FastAPI + Ollama - GitHub Codespace Ready
+        </div>
+    </div>
+
+    <script>
+        fetch('/api/conversations')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('conv-count').textContent = data.conversations?.length || 0;
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>"""
+
+# ═══════════════════════════════════════════════════════════════
+# CHAT HTML (Complete React UI)
+# ═══════════════════════════════════════════════════════════════
+
+CHAT_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -355,39 +578,24 @@ HTML_CONTENT = """<!DOCTYPE html>
             overflow: hidden;
         }
         #root { height: 100vh; }
-
-        .app-container {
-            display: flex;
-            height: 100vh;
-        }
-
-        /* Sidebar */
+        .app-container { display: flex; height: 100vh; }
         .sidebar {
             width: 260px;
             background: #111118;
             border-right: 1px solid #222;
             display: flex;
             flex-direction: column;
-            transition: width 0.3s;
         }
-        .sidebar.collapsed { width: 0; overflow: hidden; }
-
-        .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid #222;
-        }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #222; }
         .logo {
             font-size: 24px;
             font-weight: 800;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
-        .logo span { font-weight: 300; font-size: 14px; opacity: 0.7; }
-
         .new-chat-btn {
-            margin: 15px 15px 0;
+            margin: 15px;
             padding: 12px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
@@ -397,18 +605,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
         }
-        .new-chat-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(102,126,234,0.4); }
-
-        .conversations-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
+        .new-chat-btn:hover { transform: translateY(-2px); }
+        .conversations-list { flex: 1; overflow-y: auto; padding: 10px; }
         .conversation-item {
             padding: 12px;
             border-radius: 8px;
@@ -421,32 +620,6 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
         .conversation-item:hover { background: #1a1a2e; }
         .conversation-item.active { background: #1a1a2e; border-left: 3px solid #667eea; }
-        .conv-icon { font-size: 16px; }
-        .conv-info { flex: 1; overflow: hidden; }
-        .conv-title {
-            font-size: 13px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .conv-meta {
-            font-size: 11px;
-            color: #666;
-            margin-top: 2px;
-        }
-        .delete-btn {
-            opacity: 0;
-            background: none;
-            border: none;
-            color: #666;
-            cursor: pointer;
-            padding: 4px;
-            border-radius: 4px;
-            transition: all 0.2s;
-        }
-        .conversation-item:hover .delete-btn { opacity: 1; }
-        .delete-btn:hover { color: #ff4757; background: rgba(255,71,87,0.1); }
-
         .sidebar-footer {
             padding: 15px;
             border-top: 1px solid #222;
@@ -454,41 +627,13 @@ HTML_CONTENT = """<!DOCTYPE html>
             color: #555;
             text-align: center;
         }
-
-        /* Main Chat Area */
-        .main-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #0a0a0f;
-        }
-
+        .main-area { flex: 1; display: flex; flex-direction: column; background: #0a0a0f; }
         .chat-header {
             padding: 15px 25px;
             border-bottom: 1px solid #222;
             display: flex;
             align-items: center;
             justify-content: space-between;
-        }
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .menu-btn {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 5px;
-            border-radius: 6px;
-            transition: all 0.2s;
-        }
-        .menu-btn:hover { background: #1a1a2e; color: #fff; }
-        .header-title {
-            font-size: 16px;
-            font-weight: 600;
         }
         .model-selector {
             display: flex;
@@ -498,12 +643,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             background: #111118;
             border: 1px solid #333;
             border-radius: 8px;
-            cursor: pointer;
             font-size: 13px;
             color: #aaa;
-            transition: all 0.2s;
         }
-        .model-selector:hover { border-color: #667eea; }
         .status-dot {
             width: 8px;
             height: 8px;
@@ -511,11 +653,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             background: #2ecc71;
             animation: pulse 2s infinite;
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .messages-container {
             flex: 1;
             overflow-y: auto;
@@ -539,47 +677,13 @@ HTML_CONTENT = """<!DOCTYPE html>
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
-        .welcome-subtitle {
-            font-size: 18px;
-            color: #666;
-            max-width: 500px;
-        }
-        .suggestion-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
-            max-width: 600px;
-            margin-top: 10px;
-        }
-        .chip {
-            padding: 10px 20px;
-            background: #111118;
-            border: 1px solid #333;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 13px;
-            transition: all 0.2s;
-        }
-        .chip:hover {
-            border-color: #667eea;
-            background: #1a1a2e;
-            transform: translateY(-2px);
-        }
-
         .message {
             display: flex;
             gap: 15px;
             max-width: 900px;
             margin: 0 auto;
             width: 100%;
-            animation: fadeIn 0.3s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
         .message.user { flex-direction: row-reverse; }
         .avatar {
@@ -592,12 +696,8 @@ HTML_CONTENT = """<!DOCTYPE html>
             font-size: 16px;
             flex-shrink: 0;
         }
-        .avatar.ai {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .avatar.user {
-            background: #2c3e50;
-        }
+        .avatar.ai { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .avatar.user { background: #2c3e50; }
         .message-content {
             padding: 15px 20px;
             border-radius: 18px;
@@ -615,19 +715,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             color: white;
             border-top-right-radius: 4px;
         }
-        .message-meta {
-            font-size: 11px;
-            color: #555;
-            margin-top: 5px;
-            padding: 0 5px;
-        }
-        .message.user .message-meta { text-align: right; }
-
-        .typing-indicator {
-            display: flex;
-            gap: 4px;
-            padding: 20px;
-        }
+        .typing-indicator { display: flex; gap: 4px; padding: 20px; }
         .typing-indicator span {
             width: 8px;
             height: 8px;
@@ -638,15 +726,8 @@ HTML_CONTENT = """<!DOCTYPE html>
         .typing-indicator span:nth-child(1) { animation-delay: 0s; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1); }
-        }
-
-        .input-area {
-            padding: 20px;
-            border-top: 1px solid #222;
-        }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        .input-area { padding: 20px; border-top: 1px solid #222; }
         .input-container {
             max-width: 900px;
             margin: 0 auto;
@@ -657,11 +738,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             border: 1px solid #333;
             border-radius: 16px;
             padding: 12px 16px;
-            transition: all 0.2s;
-        }
-        .input-container:focus-within {
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
         }
         .message-input {
             flex: 1;
@@ -675,7 +751,6 @@ HTML_CONTENT = """<!DOCTYPE html>
             min-height: 24px;
             font-family: inherit;
         }
-        .message-input::placeholder { color: #555; }
         .send-btn {
             width: 36px;
             height: 36px;
@@ -687,116 +762,36 @@ HTML_CONTENT = """<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
-            flex-shrink: 0;
         }
-        .send-btn:hover { transform: scale(1.1); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .input-footer {
-            text-align: center;
-            font-size: 12px;
-            color: #444;
-            margin-top: 10px;
-        }
-
-        /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #444; }
-
-        /* Code blocks */
-        pre {
-            background: #0d0d15;
-            border: 1px solid #222;
-            border-radius: 8px;
-            padding: 15px;
-            overflow-x: auto;
-            margin: 10px 0;
-        }
-        code {
-            font-family: 'Fira Code', 'Consolas', monospace;
-            font-size: 13px;
-        }
-        p { margin: 8px 0; }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .sidebar { position: fixed; z-index: 100; height: 100vh; }
-            .message-content { max-width: 90%; }
-        }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback } = React;
-
-        // API base URL
+        const { useState, useEffect, useRef } = React;
         const API_BASE = window.location.origin;
 
-        // Icons
-        const Icons = {
-            Menu: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>,
-            Send: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>,
-            Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>,
-            Chat: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
-            Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
-            Bot: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 11V7a4 4 0 0 1 4-4h0"/><path d="M8 7a4 4 0 0 1 4-4h0"/><line x1="9" y1="15" x2="9.01" y2="15"/><line x1="15" y1="15" x2="15.01" y2="15"/></svg>,
-            User: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-        };
-
-        // Markdown-like parser
-        function formatMessage(text) {
-            if (!text) return '';
-            let html = text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-
-            // Code blocks
-            html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-            html = html.replace(/`([^`]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;">$1</code>');
-
-            // Bold
-            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-            // Italic
-            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-            // Links
-            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#667eea;">$1</a>');
-
-            // Line breaks
-            html = html.replace(/\n/g, '<br/>');
-
-            return html;
-        }
-
         function App() {
-            const [sidebarOpen, setSidebarOpen] = useState(true);
             const [conversations, setConversations] = useState([]);
             const [currentConv, setCurrentConv] = useState('default');
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
             const [isLoading, setIsLoading] = useState(false);
-            const [models, setModels] = useState([]);
             const [selectedModel, setSelectedModel] = useState('llama3.2');
             const [health, setHealth] = useState(null);
             const messagesEndRef = useRef(null);
-            const inputRef = useRef(null);
 
-            // Load conversations on mount
             useEffect(() => {
                 fetchConversations();
-                fetchModels();
                 fetchHealth();
                 const interval = setInterval(fetchHealth, 30000);
                 return () => clearInterval(interval);
             }, []);
 
-            // Scroll to bottom
             useEffect(() => {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
             }, [messages]);
@@ -811,75 +806,28 @@ HTML_CONTENT = """<!DOCTYPE html>
                 }
             };
 
-            const fetchModels = async () => {
-                try {
-                    const res = await fetch(`${API_BASE}/api/models`);
-                    const data = await res.json();
-                    setModels(data);
-                } catch (e) {
-                    console.error('Failed to fetch models');
-                }
-            };
-
             const fetchConversations = async () => {
                 try {
                     const res = await fetch(`${API_BASE}/api/conversations`);
                     const data = await res.json();
                     setConversations(data.conversations || []);
-                } catch (e) {
-                    console.error('Failed to fetch conversations');
-                }
-            };
-
-            const loadConversation = async (convId) => {
-                setCurrentConv(convId);
-                try {
-                    const res = await fetch(`${API_BASE}/api/conversations/${convId}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        setMessages(data.messages || []);
-                    } else {
-                        setMessages([]);
-                    }
-                } catch (e) {
-                    setMessages([]);
-                }
-                if (window.innerWidth < 768) setSidebarOpen(false);
+                } catch (e) {}
             };
 
             const newConversation = () => {
                 const id = 'conv_' + Date.now();
                 setCurrentConv(id);
                 setMessages([]);
-                fetchConversations();
-            };
-
-            const deleteConversation = async (convId, e) => {
-                e.stopPropagation();
-                try {
-                    await fetch(`${API_BASE}/api/conversations/${convId}`, { method: 'DELETE' });
-                    if (currentConv === convId) {
-                        setCurrentConv('default');
-                        setMessages([]);
-                    }
-                    fetchConversations();
-                } catch (e) {
-                    console.error('Failed to delete conversation');
-                }
             };
 
             const sendMessage = async () => {
                 if (!input.trim() || isLoading) return;
-
                 const userMessage = input.trim();
                 setInput('');
                 setIsLoading(true);
 
-                // Add user message immediately
                 const newMessages = [...messages, {
-                    role: 'user',
-                    content: userMessage,
-                    timestamp: new Date().toISOString()
+                    role: 'user', content: userMessage, timestamp: new Date().toISOString()
                 }];
                 setMessages(newMessages);
 
@@ -899,21 +847,15 @@ HTML_CONTENT = """<!DOCTYPE html>
                     const decoder = new TextDecoder();
                     let fullResponse = '';
 
-                    // Add placeholder for AI response
                     setMessages([...newMessages, {
-                        role: 'assistant',
-                        content: '',
-                        timestamp: new Date().toISOString(),
-                        streaming: true
+                        role: 'assistant', content: '', timestamp: new Date().toISOString(), streaming: true
                     }]);
 
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
-
                         const chunk = decoder.decode(value);
-                        const lines = chunk.split('\n\n');
-
+                        const lines = chunk.split('\\n\\n');
                         for (const line of lines) {
                             if (line.startsWith('data: ')) {
                                 try {
@@ -944,12 +886,11 @@ HTML_CONTENT = """<!DOCTYPE html>
                             }
                         }
                     }
-
                     fetchConversations();
                 } catch (e) {
                     setMessages([...newMessages, {
                         role: 'assistant',
-                        content: '❌ Error: Could not connect to AI. Please make sure Ollama is running.',
+                        content: 'Error: Could not connect to AI. Please make sure Ollama is running.',
                         timestamp: new Date().toISOString(),
                         error: true
                     }]);
@@ -966,95 +907,58 @@ HTML_CONTENT = """<!DOCTYPE html>
             };
 
             const suggestions = [
-                "Explain quantum computing in simple terms",
-                "Write a Python function to sort a list",
-                "What are the benefits of meditation?",
-                "Help me debug this code..."
+                "Explain quantum computing",
+                "Write a Python function",
+                "What are benefits of meditation?",
+                "Help me debug this code"
             ];
 
             return (
                 <div className="app-container">
-                    {/* Sidebar */}
-                    <div className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+                    <div className="sidebar">
                         <div className="sidebar-header">
-                            <div className="logo">MuradAI <span>v4.1</span></div>
+                            <div className="logo">MuradAI v4.1</div>
                         </div>
-                        <button className="new-chat-btn" onClick={newConversation}>
-                            <Icons.Plus /> New Chat
-                        </button>
+                        <button className="new-chat-btn" onClick={newConversation}>+ New Chat</button>
                         <div className="conversations-list">
                             {conversations.map(conv => (
-                                <div
-                                    key={conv.id}
+                                <div key={conv.id}
                                     className={`conversation-item ${conv.id === currentConv ? 'active' : ''}`}
-                                    onClick={() => loadConversation(conv.id)}
-                                >
-                                    <span className="conv-icon"><Icons.Chat /></span>
-                                    <div className="conv-info">
-                                        <div className="conv-title">{conv.title || 'New Chat'}</div>
-                                        <div className="conv-meta">{conv.message_count} messages</div>
-                                    </div>
-                                    <button className="delete-btn" onClick={(e) => deleteConversation(conv.id, e)}>
-                                        <Icons.Trash />
-                                    </button>
+                                    onClick={() => { setCurrentConv(conv.id); setMessages([]); }}>
+                                    <div style={{fontSize:'13px'}}>{conv.title || 'New Chat'}</div>
                                 </div>
                             ))}
                         </div>
                         <div className="sidebar-footer">
-                            MuradAI v4.1 © 2025
+                            <a href="/dashboard" style={{color:'#667eea',textDecoration:'none'}}>Dashboard</a>
                         </div>
                     </div>
-
-                    {/* Main Chat Area */}
                     <div className="main-area">
                         <div className="chat-header">
-                            <div className="header-left">
-                                <button className="menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
-                                    <Icons.Menu />
-                                </button>
-                                <span className="header-title">
-                                    {conversations.find(c => c.id === currentConv)?.title || 'New Chat'}
-                                </span>
-                            </div>
+                            <span style={{fontSize:'16px',fontWeight:'600'}}>MuradAI Chat</span>
                             <div className="model-selector">
                                 <span className="status-dot" style={{
                                     background: health?.ollama === 'connected' ? '#2ecc71' : '#e74c3c'
                                 }}></span>
-                                <select 
-                                    value={selectedModel}
-                                    onChange={(e) => setSelectedModel(e.target.value)}
-                                    style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        color: '#aaa',
-                                        outline: 'none',
-                                        cursor: 'pointer',
-                                        fontSize: '13px'
-                                    }}
-                                >
-                                    {models.map(m => (
-                                        <option key={m.id} value={m.id}>
-                                            {m.name} {m.available ? '✓' : '(download)'}
-                                        </option>
-                                    ))}
+                                <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
+                                    style={{background:'none',border:'none',color:'#aaa',outline:'none',cursor:'pointer',fontSize:'13px'}}>
+                                    <option value="llama3.2">Llama 3.2</option>
+                                    <option value="deepseek-r1:7b">DeepSeek R1</option>
+                                    <option value="qwen2.5-coder:7b">Qwen 2.5 Coder</option>
                                 </select>
                             </div>
                         </div>
-
                         <div className="messages-container">
                             {messages.length === 0 ? (
                                 <div className="welcome-screen">
                                     <div className="welcome-logo">MuradAI</div>
-                                    <div className="welcome-subtitle">
-                                        Your personal AI assistant powered by Ollama.
-                                        Ask anything, get intelligent responses.
+                                    <div style={{fontSize:'18px',color:'#666',maxWidth:'500px'}}>
+                                        Your personal AI assistant powered by Ollama
                                     </div>
-                                    <div className="suggestion-chips">
+                                    <div style={{display:'flex',flexWrap:'wrap',gap:'10px',justifyContent:'center',maxWidth:'600px'}}>
                                         {suggestions.map((s, i) => (
-                                            <div key={i} className="chip" onClick={() => {
-                                                setInput(s);
-                                                inputRef.current?.focus();
-                                            }}>
+                                            <div key={i} onClick={() => setInput(s)}
+                                                style={{padding:'10px 20px',background:'#111118',border:'1px solid #333',borderRadius:'20px',cursor:'pointer',fontSize:'13px'}}>
                                                 {s}
                                             </div>
                                         ))}
@@ -1063,26 +967,14 @@ HTML_CONTENT = """<!DOCTYPE html>
                             ) : (
                                 messages.map((msg, i) => (
                                     <div key={i} className={`message ${msg.role}`}>
-                                        <div className={`avatar ${msg.role}`}>
-                                            {msg.role === 'user' ? <Icons.User /> : <Icons.Bot />}
-                                        </div>
-                                        <div>
-                                            <div 
-                                                className="message-content"
-                                                dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
-                                            />
-                                            <div className="message-meta">
-                                                {msg.role === 'assistant' && msg.model && `${msg.model} • `}
-                                                {new Date(msg.timestamp).toLocaleTimeString()}
-                                                {msg.streaming && ' • typing...'}
-                                            </div>
-                                        </div>
+                                        <div className={`avatar ${msg.role}`}>{msg.role === 'user' ? 'U' : 'AI'}</div>
+                                        <div className="message-content">{msg.content}</div>
                                     </div>
                                 ))
                             )}
-                            {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+                            {isLoading && (
                                 <div className="message ai">
-                                    <div className="avatar ai"><Icons.Bot /></div>
+                                    <div className="avatar ai">AI</div>
                                     <div className="typing-indicator">
                                         <span></span><span></span><span></span>
                                     </div>
@@ -1090,35 +982,19 @@ HTML_CONTENT = """<!DOCTYPE html>
                             )}
                             <div ref={messagesEndRef} />
                         </div>
-
                         <div className="input-area">
                             <div className="input-container">
-                                <textarea
-                                    ref={inputRef}
-                                    className="message-input"
-                                    placeholder="Message MuradAI..."
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    rows={1}
-                                />
-                                <button 
-                                    className="send-btn"
-                                    onClick={sendMessage}
-                                    disabled={!input.trim() || isLoading}
-                                >
-                                    <Icons.Send />
-                                </button>
-                            </div>
-                            <div className="input-footer">
-                                MuradAI can make mistakes. Consider checking important information.
+                                <textarea className="message-input" placeholder="Message MuradAI..."
+                                    value={input} onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown} rows={1} />
+                                <button className="send-btn" onClick={sendMessage}
+                                    disabled={!input.trim() || isLoading}>Send</button>
                             </div>
                         </div>
                     </div>
                 </div>
             );
         }
-
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
